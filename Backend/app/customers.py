@@ -56,3 +56,18 @@ def update_customer(customer_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+from .models import APIStats
+
+@customers_bp.route('/api/stats', methods=['GET'])
+def get_api_stats():
+    stats = APIStats.query.first()
+    if not stats:
+        return jsonify({"error": "No stats available"}), 404
+    
+    avg_response_time = stats.total_response_time / stats.total_requests if stats.total_requests > 0 else 0
+    
+    return jsonify({
+        "total_requests": stats.total_requests,
+        "failed_requests": stats.failed_requests,
+        "average_response_time": avg_response_time
+    }), 200
