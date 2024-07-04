@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from .models import Customer
 from . import db
+from .models import APIStats
 
 customers_bp = Blueprint('customers', __name__)
 
@@ -56,7 +57,6 @@ def update_customer(customer_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
-from .models import APIStats
 
 @customers_bp.route('/api/stats', methods=['GET'])
 def get_api_stats():

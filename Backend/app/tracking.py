@@ -1,9 +1,14 @@
-from flask import request, g
+from flask import request, g, Blueprint, jsonify
 from .models import APIHit, APIStats
 from . import db
 import httpagentparser
 import re
 import time
+
+def get_browser_info(user_agent):
+    parsed = httpagentparser.detect(user_agent)
+    browser = parsed.get('browser', {})
+    return browser.get('name', 'Unknown')
 
 def generalize_endpoint(endpoint):
     if endpoint.startswith('/api/customers/'):
@@ -15,6 +20,9 @@ def generalize_endpoint(endpoint):
             return '/api/customers/:id'
     return endpoint
 
+def should_track_endpoint(endpoint):
+    return endpoint.startswith('/api/customers/')
+
 def setup_tracking(app):
     @app.before_request
     def before_request():
@@ -22,9 +30,12 @@ def setup_tracking(app):
 
     @app.after_request
     def track_api_hit(response):
+        if not should_track_endpoint(request.path):
+            return response
+
         user_agent = request.headers.get('User-Agent')
         parsed_agent = httpagentparser.detect(user_agent)
-
+        browser_info = get_browser_info(user_agent)
         os_info = parsed_agent.get('os', {}).get('name')
         if not os_info:
             os_info = request.user_agent.platform or 'Unknown'
@@ -35,7 +46,7 @@ def setup_tracking(app):
         hit = APIHit(
             request_type=request.method,
             endpoint=generalized_endpoint,
-            user_agent=user_agent,
+            user_agent=browser_info,
             request_body=request.get_data(as_text=True),
             os=os_info,
             ip_address=request.remote_addr,
@@ -43,21 +54,16 @@ def setup_tracking(app):
             response_time=response_time
         )
         db.session.add(hit)
+
         stats = APIStats.query.first()
         if not stats:
             stats = APIStats(total_requests=0, failed_requests=0, total_response_time=0.0)
         db.session.add(stats)
-        if stats.total_requests is None:
-            stats.total_requests = 0
-        if stats.failed_requests is None:
-            stats.failed_requests = 0
-        if stats.total_response_time is None:
-            stats.total_response_time = 0.0
-
-        stats.total_requests += 1
+        
+        stats.total_requests = (stats.total_requests or 0) + 1
         if response.status_code >= 400:
-            stats.failed_requests += 1
-        stats.total_response_time += response_time
+            stats.failed_requests = (stats.failed_requests or 0) + 1
+        stats.total_response_time = (stats.total_response_time or 0.0) + response_time
 
         db.session.commit()
 

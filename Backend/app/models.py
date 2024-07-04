@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from . import db
+from sqlalchemy import func
 
 class Customer(db.Model):
     __tablename__ = 'customers'
@@ -28,6 +29,29 @@ class APIHit(db.Model):
     ip_address = db.Column(db.String(50))
     status_code = db.Column(db.Integer)
     response_time = db.Column(db.Float)
+    @classmethod
+    def aggregate_by_column(cls, column_name):
+        valid_columns = ['request_type', 'endpoint', 'user_agent', 'os', 'status_code']
+        if column_name not in valid_columns:
+            raise ValueError(f"Invalid column name. Must be one of {valid_columns}")
+        
+        column = getattr(cls, column_name)
+        query = db.session.query(
+            column.label('label'),
+            func.count(func.distinct(cls.id)).label('count')
+        ).group_by(column)
+        
+        return query.all()
+    @classmethod
+    def get_recent_requests(cls, days):
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        query = cls.query.filter(
+            cls.timestamp.between(start_date, end_date)
+        ).order_by(cls.timestamp.desc())
+        
+        return query.all()
 
 class APIStats(db.Model):
     __tablename__ = 'api_stats'
